@@ -10,36 +10,45 @@ from dash import dcc, html
 import plotly.express as px
 
 # Función para obtener datos de Shein
-def obtener_precios_shein():
-    url = "https://us.shein.com/Women-Clothing-c-2035.html"
-    response = requests.get(url)
+def obtener_precios_shein(palabra_clave="vestidos"):
+    url = f"https://us.shein.com/search?keyword={palabra_clave}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser')
     
     productos = []
     for item in soup.select('.S-product-item__info'):
-        nombre = item.select_one('.S-product-item__name').text.strip()
-        precio = item.select_one('.S-product-item__price').text.strip().replace('$', '')
-        enlace = item.find('a', href=True)['href']
-        productos.append({
-            "Fecha": datetime.now().strftime('%Y-%m-%d'),
-            "Producto": nombre,
-            "Precio (USD)": float(precio),
-            "Enlace": f"https://us.shein.com{enlace}"
-        })
+        try:
+            nombre = item.select_one('.S-product-item__name').text.strip()
+            precio = item.select_one('.S-product-item__price-current').text.strip().replace('$', '')
+            productos.append({
+                'Producto': nombre,
+                'Precio (USD)': float(precio),
+                'Fecha': datetime.now().strftime('%Y-%m-%d')
+            })
+        except AttributeError:
+            continue  # Ignorar productos incompletos
     
     return pd.DataFrame(productos)
 
 # Guardar los datos en un archivo CSV
-def guardar_datos_csv(datos):
-    archivo = "precios_shein.csv"
-    if not os.path.exists(archivo):
-        datos.to_csv(archivo, index=False)
-    else:
-        datos.to_csv(archivo, mode='a', header=False, index=False)
+def guardar_datos_csv(dataframe, archivo='shein_precios.csv'):
+    try:
+        # Cargar datos existentes si el archivo ya existe
+        if os.path.exists(archivo):
+            datos_existentes = pd.read_csv(archivo)
+            datos_totales = pd.concat([datos_existentes, dataframe], ignore_index=True)
+        else:
+            datos_totales = dataframe
+        # Guardar todos los datos combinados en el archivo CSV
+        datos_totales.to_csv(archivo, index=False)
+        print(f"Datos guardados en {archivo}")
+    except Exception as e:
+        print(f"Error al guardar datos: {e}")
 
 # Función para generar el dashboard
 def generar_dashboard():
-    archivo = "precios_shein.csv"
+    archivo = "shein_precios.csv"
     if not os.path.exists(archivo):
         print("No hay datos disponibles para generar el dashboard.")
         return
@@ -53,7 +62,7 @@ def generar_dashboard():
         html.H1("Dashboard de Precios - Shein"),
         dcc.Graph(figure=fig)
     ])
-    app.run_server(debug=True)
+    app.run_server(debug=False)
 
 # Función principal: combinar todo
 def tarea_semanal():
@@ -61,6 +70,7 @@ def tarea_semanal():
     datos = obtener_precios_shein()
     guardar_datos_csv(datos)
     print("Datos guardados en CSV.")
+    print("Generando dashboard interactivo...")
     generar_dashboard()
 
 # Programar tarea semanal
@@ -70,4 +80,3 @@ print("Automatización configurada. Esperando ejecución semanal...")
 while True:
     schedule.run_pending()
     time.sleep(1)
-
